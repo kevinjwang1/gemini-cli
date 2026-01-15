@@ -139,7 +139,32 @@ export class ExtensionManager extends ExtensionLoader {
     installMetadata: ExtensionInstallMetadata,
     previousExtensionConfig?: ExtensionConfig,
   ): Promise<GeminiCLIExtension> {
+    const allowedExtensions = this.settings.security.allowedExtensions;
+    const isAllowedExtensionsConfigured =
+      allowedExtensions && allowedExtensions.length > 0;
+
+    let isAllowedByAllowlist = false;
+    if (isAllowedExtensionsConfigured) {
+      isAllowedByAllowlist = allowedExtensions.some((pattern) => {
+        try {
+          return new RegExp(pattern).test(installMetadata.source);
+        } catch (e) {
+          debugLogger.warn(
+            `Invalid regex pattern in allowedExtensions: "${pattern}". Error: ${getErrorMessage(e)}`,
+          );
+          return false;
+        }
+      });
+
+      if (!isAllowedByAllowlist) {
+        throw new Error(
+          `Installing extension from source "${installMetadata.source}" is not allowed by the "allowedExtensions" security setting.`,
+        );
+      }
+    }
+
     if (
+      !isAllowedByAllowlist &&
       (installMetadata.type === 'git' ||
         installMetadata.type === 'github-release') &&
       this.settings.security.blockGitExtensions
@@ -148,6 +173,7 @@ export class ExtensionManager extends ExtensionLoader {
         'Installing extensions from remote sources is disallowed by your current settings.',
       );
     }
+
     const isUpdate = !!previousExtensionConfig;
     let newExtensionConfig: ExtensionConfig | null = null;
     let localSourcePath: string | undefined;
@@ -503,7 +529,33 @@ Would you like to attempt to install via "git clone" instead?`,
 
     const installMetadata = loadInstallMetadata(extensionDir);
     let effectiveExtensionPath = extensionDir;
+    const allowedExtensions = this.settings.security.allowedExtensions;
+    const isAllowedExtensionsConfigured =
+      allowedExtensions && allowedExtensions.length > 0;
+
+    let isAllowedByAllowlist = false;
+    if (installMetadata && isAllowedExtensionsConfigured) {
+      isAllowedByAllowlist = allowedExtensions.some((pattern) => {
+        try {
+          return new RegExp(pattern).test(installMetadata.source);
+        } catch (e) {
+          debugLogger.warn(
+            `Invalid regex pattern in allowedExtensions: "${pattern}". Error: ${getErrorMessage(e)}`,
+          );
+          return false;
+        }
+      });
+
+      if (!isAllowedByAllowlist) {
+        debugLogger.warn(
+          `Skipping extension load from source "${installMetadata.source}" as it is not allowed by the "allowedExtensions" security setting.`,
+        );
+        return null;
+      }
+    }
+
     if (
+      !isAllowedByAllowlist &&
       (installMetadata?.type === 'git' ||
         installMetadata?.type === 'github-release') &&
       this.settings.security.blockGitExtensions
